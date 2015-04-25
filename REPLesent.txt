@@ -1,0 +1,69 @@
+| \G     \s         \s
+| \C      \s  \*Typesafe
+| \R       \s          \s
+---
+| \*The Akka Streams of Rhetoric and the
+| \*Identity of Multimodal Composition Practices
+
+| Martynas Mickevičius
+---
+| \*That's a joke. :)
+---
+| \*Introduction to Akka Streams
+
+```
+libraryDependencies +=
+  "com.typesafe.akka" %%
+  "akka-stream-experimental" %
+  "1.0-RC1"
+```
+---
+| \*Motivation
+
+* regarding data as a stream of elements
+--
+
+* actors fit here well, but are error-prone
+  to make processing stable
+--
+
+* purpose of Akka Streams API is to provide
+  safe way to formulate stream processing setups
+---
+| \*Sample Usage
+
+```
+case class Hashtag(name: String)
+case class Author(handle: String)
+case class Tweet(author: Author, hashtags: Set[Hashtag])
+
+val Akka = Hashtag("#akka")
+
+val tweets: Source[Tweet, Unit] = ???
+tweets.filter(_.hashtags.contains(Akka))
+  .map(_.author)
+  .runForeach(println)
+```
+---
+| \*Let's run it
+
+```
+import akka.stream.scaladsl._
+
+Source(0 to 10).runForeach(print)
+```
+---
+| \*Materializer
+
+```
+{
+  import akka.actor._
+  import akka.stream._
+  import akka.stream.scaladsl._
+
+  implicit val sys = ActorSystem("streams")
+  implicit val mat = ActorFlowMaterializer()
+  Source(0 to 10).runForeach(print)
+  ()
+}
+```
