@@ -71,12 +71,386 @@ Source(0 to 10).runForeach(print)
 | \*Some of the sources
 
 ```
-Source(iterable: immutable.Iterable[T])
+Source[T](i: Iterable[T]): Source[T, Unit]
 
-Source(f: () ⇒ Iterator[T])
+Source[T](i: () ⇒ Iterator[T]): Source[T, Unit]
 
-Source(future: Future[T])
+Source[T](f: Future[T]): Source[T, Unit]
 
-Source(initialDelay: FiniteDuration,
-       interval: FiniteDuration, tick: T)
+Source[T](d: FiniteDuration, i: FiniteDuration,
+          tick: T): Source[T, Cancellable]
 ```
+---
+| \*Getting rid of the helpers
+
+```
+wireAllTheThings { implicit sys => implicit mat => ec =>
+  Source(65 to 77).map(_.toChar).runForeach(print)
+
+  val source: Source[Int, Unit] = Source(78 to 90)
+  val flow: Flow[Int, Char, Unit] = Flow[Int].map(_.toChar)
+  val sink: Sink[Char, Future[Unit]] = Sink.foreach(print)
+
+  source.via(flow).to(sink).run()
+}
+```
+---
+| \*Some of the sinks
+
+```
+Sink.foreach[T](f: T ⇒ Unit): Sink[T, Future[Unit]]
+
+Sink.onComplete[T](f: Try[Unit] ⇒ Unit): Sink[T, Unit]
+
+Sink.head[T]: Sink[T, Future[T]]
+
+Sink.fold[U, T](zero: U)(f: (U, T) ⇒ U):
+  Sink[T, Future[U]]
+```
+---
+| \*Materialized values
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+
+  val first = Source(0 to 10).runWith(Sink.head)
+  first.onComplete(println)
+}
+```
+---
+| \*Some of the flow transformations
+
+```
+flow.map[T](f: Out ⇒ T)
+flow.mapConcat[T](f: Out ⇒ immutable.Seq[T])
+flow.mapAsync[T](par: Int, f: Out ⇒ Future[T])
+
+flow.filter(p: Out ⇒ Boolean)
+flow.collect[T](pf: PartialFunction[Out, T])
+
+flow.grouped(n: Int)
+flow.groupedWithin(n: Int, d: FiniteDuration)
+
+flow.scan[T](zero: T)(f: (T, Out) ⇒ T)
+```
+---
+| \*Conflate
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  def delay[T](dur: FiniteDuration, elem: T) =
+    after(dur, s.scheduler)(Future.successful(elem))
+
+  Source(0.seconds, 100.millis, 1).
+    conflate(_ => 1)(_ + _).
+    mapAsync(1, i => delay(1.seconds, i)).
+    withAttributes(inputBuffer(1, 1)).
+    to(Sink.foreach(print)).
+    run()
+}
+```
+---
+| \*Expand
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  def delay[T](dur: FiniteDuration, elem: T) =
+    after(dur, s.scheduler)(Future.successful(elem))
+
+  Source(0 to 5).
+    mapAsync(1, i => delay(200.millis, i)).
+    expand(_ => 1)((1, _: Int)).
+    runFold(0)(_ + _).
+    onComplete(println)
+}
+```
+---
+| \*Buffer
+
+```
+flow.buffer(size: Int, s: OverflowStrateg)
+```
+
+Where \*s\s is one of:
+  - backpressure
+  - dropTail
+  - dropHead
+  - dropBuffer
+  - error
+---
+| \*Transform
+
+```
+flow.transform[T](mkStage: () ⇒ Stage[Out, T])
+```
+
+Where \*mkStage\s is a factory of one of:
+  - PushPullStage
+  - PushStage
+  - StatefulStage
+  - DetachedStage
+  - AsyncStage
+---
+| \*PushPullStage
+
+```
+class Map[A, B](f: A => B) extends PushPullStage[A, B] {
+  override def onPush(e: A, c: Context[B]) =
+    c.push(f(e))
+
+  override def onPull(c: Context[B]) =
+    c.pull()
+}
+
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  Source(0 to 9).
+    transform(() => new Map(_ + 3)).
+    runForeach(print)
+}
+```
+---
+| \*PushStage
+
+```
+class Map2[A, B](f: A => B) extends PushStage[A, B] {
+  override def onPush(e: A, c: Context[B]) =
+    c.push(f(e))
+}
+
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  Source(0 to 9).
+    transform(() => new Map2(_ + 4)).
+    runForeach(print)
+}
+```
+---
+| \*StatefulStage
+
+```
+class Duplicator[A]() extends StatefulStage[A, A] {
+  override def initial = new StageState[A, A] {
+    override def onPush(e: A, c: Context[A]) =
+      emit(List(e, e).iterator, c)
+  }
+}
+
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  Source(0 to 4).
+    transform(() => new Duplicator).
+    runForeach(print)
+}
+```
+---
+| \*Flow Graphs
+
+request                           +----------+
++----------------------------+--->|  Termi-  | rendering
+                             |    |  nation  +-----------> |
+     +--------------------------->|  Merge   |             |
+     | Termination channel   |    +----------+      TCP    |
+     |                       |                      level  |
+     |                       | Method               client |
+     |      +------------+   | Bypass               flow   |
+resp | prep |  Response  |<--+                             |
+<----+------|  Parsing   |                                 |
+            |  Merge     |<------------------------------- V
+            +------------+
+---
+| \*Fan-out Junctions
+
+* Broadcast[T]
+* Balance[T]
+* UnZip[A,B]
+* FlexiRoute[In]
+---
+| \*Fan-in Junctions
+
+* Merge[In]
+* MergePreferred[In]
+* ZipWith[A, B, ..., Out]
+* Zip[A,B]
+* Concat[A]
+* FlexiMerge[Out]
+---
+| \*Building a FlowGraph
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val g = FlowGraph.closed() { implicit b =>
+    import FlowGraph.Implicits._
+
+    val in = Source(1 to 10)
+    val out = Sink.foreach(print)
+
+    val bcast = b add Broadcast[Int](outputPorts = 2)
+    val merge = b add Merge[Int](inputPorts = 2)
+
+    val f1, f2, f3, f4 = Flow[Int].map(_ + 10)
+
+    in ~> f1 ~> bcast ~> f2 ~> merge ~> f3 ~> out
+                bcast ~> f4 ~> merge
+  }.run()
+}
+```
+---
+| \*Integration with the outside (actor) world
+
+```
+class Printer extends Actor {
+  def receive = { case m => println(s"Got: $m") }
+}
+
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val sinkRef = s.actorOf(Props(new Printer))
+  val sourceRef = Source.actorRef[Int](8, fail).
+    map(_ + 1).
+    to(Sink.actorRef(sinkRef, "done")).
+    run()
+
+  sourceRef ! 1
+  sourceRef ! 2
+  (s, sourceRef)
+}
+---
+| \*Reactive Streams
+
+Standard for asynchronous stream processing with
+non-blocking back pressure. An incomplete list of
+other implementations:
+
+  * Reactor (1.1+)
+  * RxJava
+  * Ratpack
+  * Slick
+---
+| \*Reactive Streams Interfaces
+
+```
+public interface Publisher<T> {
+  public void subscribe(Subscriber<? super T> s);
+}
+public interface Subscriber<T> {
+  public void onSubscribe(Subscription s);
+  public void onNext(T t);
+  public void onError(Throwable t);
+  public void onComplete();
+}
+public interface Subscription {
+  public void request(long n);
+  public void cancel();
+}
+```
+---
+| \*Reactive Streams as interop layer
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val text = "Hello reactive and streamable Minsk!"
+  val obs = rx.Observable.from(text.split("\\s"))
+  val publisher = rx.RxReactiveStreams.toPublisher(obs)
+
+  Source(publisher).map(_.toUpperCase).runForeach(println)
+}
+```
+---
+| \*Cookbook
+
+Working with Flows, Graphs, rate, IO.
+
+http://akka.io/docs/akka-stream-and-http-experimental/
+  1.0-RC1/scala/stream-cookbook.html
+---
+| \*Akka Streams for library writers
+
+* Akka Stream is materialized once and fully
+* materialization needs to happen on the user side
+* libraries must provide Sources/Flows/Sinks
+---
+| \*Akka Stream TCP
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val connections = Tcp().bind("localhost", 9000)
+
+  connections runForeach { connection =>
+    println(s"New connection: ${connection.remoteAddress}")
+
+    val echo = Flow[ByteString]
+    connection handleWith echo
+  }
+}
+```
+---
+| \*Akka Http
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val connections = Http().bind("localhost", 9001)
+
+  connections runForeach { connection =>
+    println(s"New connection: ${connection.remoteAddress}")
+
+    val pingpong = Flow[HttpRequest]
+      .map {
+        case HttpRequest(GET, Uri.Path("/ping"), _, _, _) =>
+          HttpResponse(entity = "PONG!")
+      }
+    connection handleWith pingpong
+  }
+}
+```
+---
+| \*Akka Http Routing
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  val route = path("order" / IntNumber) { id =>
+      (get | put) { ctx =>
+        val name = ctx.request.method.name
+        ctx.complete(s"Received $name request for order $id")
+      }
+    }
+
+  Http().bindAndHandle(route, "localhost", 9002)
+}
+```
+---
+| \*Akka Http
+
+```
+libraryDependencies +=
+  "com.typesafe.akka" %%
+  "akka-http-scala-experimental" %
+  "1.0-RC1"
+```
+---
+| \*Testing streams
+
+```
+wireAllTheThings { implicit s => implicit m => implicit e =>
+  Source(0 to 9).map(_ + 1).
+    runWith(TestSink.probe[Int]).
+    request(4).expectNext(1, 2, 3, 4).
+    request(6).expectNext(5, 6, 7, 8, 9, 11).
+    expectComplete()
+}
+```
+---
+| \*Testing Http
+
+```
+val r = path("order" / IntNumber) { id =>
+  (get | put) { ctx =>
+    val name = ctx.request.method.name
+    ctx.complete(s"Received $name request for order $id")
+  }
+}
+
+HttpRequest(POST, "/order/2", Nil, Empty) ~> r ~> check {
+  response.status shouldBe OK
+}
+```
+---
+| \*Thank you!
+
+| \*Expecting a stream of questions.
