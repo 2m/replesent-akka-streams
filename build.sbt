@@ -21,6 +21,13 @@ def run(intp: scala.tools.nsc.interpreter.IMain, s: Int) = {
   r
 }
 
+def cal(intp: scala.tools.nsc.interpreter.IMain) = {
+  val pres = REPLesent(intp=intp)
+  import pres._
+  1.g
+  ()
+}
+
 import akka.actor._
 import akka.stream._
 import akka.stream.scaladsl._
