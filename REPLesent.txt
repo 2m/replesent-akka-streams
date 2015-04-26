@@ -1,6 +1,21 @@
-| \G     \s         \s
-| \C      \s  \*Typesafe
-| \R       \s          \s
+║ \G     \s         \s
+║ \C      \s  \*Typesafe
+║ \R       \s          \s
+║
+║
+║
+║
+║
+║
+║
+║
+║
+║
+║
+║
+║
+║
+╚═══════════════════════════════════════════════════════════
 ---
 | \*The Akka Streams of Rhetoric and the
 | \*Identity of Multimodal Composition Practices
@@ -407,7 +422,7 @@ wireAllTheThings { implicit s => implicit m => implicit e =>
   val route = path("order" / IntNumber) { id =>
       (get | put) { ctx =>
         val name = ctx.request.method.name
-        ctx.complete(s"Received $name request for order $id")
+        ctx.complete(s"Received $name for order $id")
       }
     }
 
