@@ -67,3 +67,16 @@ Source(0 to 10).runForeach(print)
   ()
 }
 ```
+---
+| \*Some of the sources
+
+```
+Source(iterable: immutable.Iterable[T])
+
+Source(f: () ⇒ Iterator[T])
+
+Source(future: Future[T])
+
+Source(initialDelay: FiniteDuration,
+       interval: FiniteDuration, tick: T)
+```
