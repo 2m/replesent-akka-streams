@@ -183,7 +183,7 @@ wireAllTheThings { implicit s => implicit m => implicit e =>
 | \*Buffer
 
 ```
-flow.buffer(size: Int, s: OverflowStrateg)
+flow.buffer(size: Int, s: OverflowStrategy)
 ```
 
 Where \*s\s is one of:
@@ -282,10 +282,13 @@ resp | prep |  Response  |<--+                             |
 
 * Merge[In]
 * MergePreferred[In]
-* ZipWith[A, B, ..., Out]
 * Zip[A,B]
 * Concat[A]
 * FlexiMerge[Out]
+---
+              +-------+ ---> \*f2\s ---> +-------+
+\*in\s --> \*f1\s --> | \*bcast\s |              | \*merge\s | --> \*f3\s --> \*out\s
+              +-------+ ---> \*f4\s ---> +-------+
 ---
 | \*Building a FlowGraph
 
@@ -420,11 +423,11 @@ wireAllTheThings { implicit s => implicit m => implicit e =>
 ```
 wireAllTheThings { implicit s => implicit m => implicit e =>
   val route = path("order" / IntNumber) { id =>
-      (get | put) { ctx =>
-        val name = ctx.request.method.name
-        ctx.complete(s"Received $name for order $id")
-      }
+    (get | put) { ctx =>
+      val name = ctx.request.method.name
+      ctx.complete(s"Received $name for order $id")
     }
+  }
 
   Http().bindAndHandle(route, "localhost", 9002)
 }
